@@ -1,0 +1,3 @@
+data/*
+!data/SNGS-021
+.venv/
