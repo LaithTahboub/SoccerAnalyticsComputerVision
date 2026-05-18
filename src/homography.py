@@ -400,38 +400,56 @@ def project_points(homography, pts_img):
     return cv2.perspectiveTransform(pts, homography).reshape(-1, 2)
 
 
-def smooth_homography_init(img_w, img_h, alpha=0.5):
-    # smooth a few fixed probe points
-    # this is steadier than smoothing matrix entries
+def probe_points(img_w, img_h):
     margin = 0.15
-    canon = np.array([
+    return np.array([
         [img_w * margin, img_h * margin],
         [img_w * (1.0 - margin), img_h * margin],
         [img_w * (1.0 - margin), img_h * (1.0 - margin)],
         [img_w * margin, img_h * (1.0 - margin)],
     ])
-    return {
-        "canon": canon,
-        "world": None,
-        "alpha": alpha,
-    }
 
 
-def smooth_homography(state, homography):
-    if homography is None:
-        return None
+def smooth_homography_seq(raw_homographies, img_w, img_h, window=2):
+    # the per-frame fit occasionally spikes to a wildly wrong homography,
+    # which shows up as wobble on the minimap. smooth the whole sequence by
+    # median filtering a few fixed probe points: the median throws out the
+    # single-frame spikes without lagging real camera pans, then each
+    # homography is rebuilt from the cleaned probe points
+    canon = probe_points(img_w, img_h)
 
-    world_probe_points = project_points(homography, state["canon"])
-    if not np.all(np.isfinite(world_probe_points)):
-        return None
+    probes = []
+    for homography in raw_homographies:
+        if homography is None:
+            probes.append(None)
+            continue
+        world = project_points(homography, canon)
+        probes.append(world if np.all(np.isfinite(world)) else None)
 
-    if state["world"] is None:
-        state["world"] = world_probe_points
-    else:
-        alpha = state["alpha"]
-        state["world"] = alpha * world_probe_points + (1.0 - alpha) * state["world"]
+    # carry the last good probe forward, then back-fill the start
+    last = None
+    for i in range(len(probes)):
+        if probes[i] is not None:
+            last = probes[i]
+        else:
+            probes[i] = last
+    first = None
+    for p in probes:
+        if p is not None:
+            first = p
+            break
+    if first is None:
+        return [None] * len(raw_homographies)
+    probes = [first if p is None else p for p in probes]
 
-    smoothed, _ = cv2.findHomography(state["canon"], state["world"])
-    if smoothed is None:
-        return None
-    return smoothed / smoothed[2, 2]
+    smoothed = []
+    for i in range(len(probes)):
+        lo = max(0, i - window)
+        hi = min(len(probes), i + window + 1)
+        world = np.median(np.stack(probes[lo:hi]), axis=0)
+        homography, _ = cv2.findHomography(canon, world)
+        if homography is None:
+            smoothed.append(None)
+        else:
+            smoothed.append(homography / homography[2, 2])
+    return smoothed
