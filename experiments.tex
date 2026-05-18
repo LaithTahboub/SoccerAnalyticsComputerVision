@@ -1,0 +1,148 @@
+% Experiments section draft (Section 4 through Experiment 1).
+% Self-contained so it compiles standalone; lift the body into the NeurIPS
+% paper as needed. The results table uses booktabs, per NeurIPS convention.
+
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+
+\begin{document}
+
+\section{Experiments}
+
+We evaluate our pipeline on the SoccerNet Game State Reconstruction (GSR)
+dataset and compare against its official deep-learning baseline. Our
+experiments are organized around three questions: is a classical homography
+\emph{accurate enough} for minimap localization (Experiment~1), does each
+component of the pipeline \emph{earn its place} (Experiment~2), and is the
+method \emph{cheap enough} to deliver on its accessibility motivation
+(Experiment~3). This draft covers the setup and Experiment~1.
+
+\subsection{Experimental Setup}
+
+\paragraph{Dataset.}
+We use the validation split of the SoccerNet GSR dataset: 58 broadcast clips,
+each 30 seconds long at 25 frames per second (750 frames of
+$1920\times1080$ video), spanning varied stadiums, lighting, and camera work.
+Every frame is annotated with pitch-line points and with player, goalkeeper,
+referee, and ball bounding boxes, each carrying a ground-truth pitch
+coordinate.
+
+\paragraph{Baseline.}
+We compare against SoccerNet's \texttt{sn-gamestate} baseline, a deep
+multi-stage pipeline whose camera calibration is a trained neural network
+producing a full 3D camera model. We obtain its predictions from the official
+released baseline tracker state, which provides, for every clip, the
+baseline's detected pitch lines, detected boxes, and predicted pitch
+positions. We note that the baseline does not place the ball on its 2D
+minimap at all: its radar visualization explicitly skips ball detections, and
+its detector in any case rarely localizes the ball (e.g.\ producing ball
+detections in only 0 and 5 of 750 frames on two inspected clips). In contrast,
+our pipeline reconstructs the ball explicitly, including a physics-based
+correction for airborne frames.
+
+\paragraph{Inputs and metric.}
+Our pipeline consumes only per-frame pitch lines and player/ball detections;
+obtaining these is a standard perception problem outside our scope, so we
+evaluate our geometry under two input regimes --- the dataset's ground-truth
+annotations, and the baseline's own (imperfect) detected lines and boxes. The
+latter lets us compare geometry methods on identical inputs. Unless stated
+otherwise, error is the Euclidean distance, in metres on the pitch, between a
+predicted position and its ground-truth pitch coordinate.
+
+\subsection{Experiment 1: Player Localization Accuracy}
+
+\paragraph{Goal.}
+Determine whether a classical planar homography is accurate enough for
+minimap localization, and how it compares to the baseline's learned 3D
+calibration.
+
+\paragraph{Protocol.}
+We measure per-detection localization error for all on-pitch persons across
+all 58 validation clips (the ball is excluded here, as its ground-truth pitch
+coordinate is unreliable when airborne; the ball is addressed in
+Experiment~2), under three conditions:
+\begin{itemize}
+  \item \textbf{Ours (GT lines)} --- our homography estimated from the
+    dataset's ground-truth pitch lines, projecting ground-truth foot points.
+    With perfect inputs, this is an upper bound on our geometry.
+  \item \textbf{Ours (SoccerNet inputs)} --- our homography estimated from the
+    baseline's \emph{detected} pitch lines, projecting the baseline's
+    \emph{detected} foot points.
+  \item \textbf{SoccerNet} --- the baseline's own predicted positions from its
+    3D calibration.
+\end{itemize}
+The latter two conditions operate on identical detections, so any difference
+between them isolates the geometry method. To score the baseline's detections
+against ground truth, each detection is matched to a ground-truth box by
+greedy image-space IoU (threshold 0.5); unmatched detections are a
+perception-recall issue and are excluded.
+
+\paragraph{Results.}
+Table~\ref{tab:exp1} reports the error distribution, aggregated over 696{,}776
+detections for the ground-truth-input condition and 569{,}075 matched
+detections for the two detected-input conditions.
+
+\begin{table}[t]
+  \caption{Player localization error against ground truth, over all 58
+    validation clips. ``Ours (GT lines)'' uses perfect inputs and is an upper
+    bound; the other two conditions share SoccerNet's detections and thus
+    isolate the geometry method. Median and p90 are in metres; the last three
+    columns are the percentage of detections within the given radius. Best
+    per column in bold.}
+  \label{tab:exp1}
+  \centering
+  \begin{tabular}{lccccc}
+    \toprule
+    Condition & Median (m) & p90 (m) & $<$1\,m (\%) & $<$2\,m (\%) & $<$5\,m (\%) \\
+    \midrule
+    Ours (GT lines)         & \textbf{0.48} & \textbf{1.78}  & \textbf{78.1} & \textbf{91.2} & \textbf{96.8} \\
+    Ours (SoccerNet inputs) & 0.84          & 3.60           & 57.6          & 80.3          & 93.0 \\
+    SoccerNet               & 0.98          & 20.22          & 50.7          & 69.7          & 78.9 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+With ground-truth lines our homography localizes players to a median of
+0.48\,m, with 91\% of detections within 2\,m. Fed the baseline's own detected
+lines and boxes --- a controlled, like-for-like test of geometry --- our
+method achieves a median error of 0.84\,m, \emph{lower} than the baseline's
+0.98\,m on the identical detections, and wins at every tolerance (e.g.\ 80.3\%
+vs.\ 69.7\% within 2\,m). The gap is most pronounced in the tail: our
+90th-percentile error is 3.60\,m, against 20.22\,m for the baseline --- one in
+ten of the baseline's predictions is off by more than 20\,m. The mean error is
+the lone metric favouring the baseline (7.90\,m vs.\ our 8.70\,m); this
+statistic is dominated by a thin tail of extreme frames --- our method in fact
+produces \emph{fewer} large errors (7\% beyond 5\,m vs.\ the baseline's 21\%)
+--- so we report the robust median and threshold fractions as the primary
+measures.
+
+Figure~\ref{fig:exp1} shows a representative frame. Our reconstruction, under
+both input regimes, reproduces the ground-truth player configuration, whereas
+the baseline's calibration shifts the entire formation by roughly 15\,m. The
+$0.48 \rightarrow 0.84$\,m increase between our two input regimes quantifies
+the cost of imperfect detected lines.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{outputs/SNGS-095/experiment1_figure.jpg}
+  \caption{Localization on clip SNGS-095 (an illustrative example; the full
+    distribution is in Table~\ref{tab:exp1}). Top, left to right: minimaps from
+    our homography on ground-truth inputs, our homography on SoccerNet's
+    detected inputs, and SoccerNet's own 3D calibration. Bottom: the source
+    broadcast frame. Both of our reconstructions match the true formation; the
+    baseline displaces it by ${\sim}15$\,m. The ball (yellow) appears only in
+    our ground-truth-input panel: our pipeline reconstructs it, whereas the
+    SoccerNet baseline neither reliably detects the ball nor places it on the
+    minimap.}
+  \label{fig:exp1}
+\end{figure}
+
+\paragraph{Takeaway.}
+A classical planar homography matches and, on this evidence, exceeds a trained
+3D-calibration network for minimap player localization, while requiring no
+training, no learned weights, and no GPU.
+
+\end{document}

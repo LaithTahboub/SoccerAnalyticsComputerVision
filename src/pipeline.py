@@ -61,13 +61,21 @@ def draw_broadcast(frame, dets):
 
 def draw_minimap(canvas, w2p, dets):
     img = canvas.copy()
+    ball = None
     for d in dets:
         if d.get("world_xy") is None:
             continue
+        if d["role"] == "ball":
+            ball = d
+            continue
         p = w2p(*d["world_xy"])
-        r = 6 if d["role"] == "ball" else 8
-        cv2.circle(img, p, r, color_of(d), -1)
-        cv2.circle(img, p, r, (0, 0, 0), 1)
+        cv2.circle(img, p, 8, color_of(d), -1)
+        cv2.circle(img, p, 8, (0, 0, 0), 1)
+    # draw the ball last so it stays on top, with a white ring to stand out
+    if ball is not None:
+        p = w2p(*ball["world_xy"])
+        cv2.circle(img, p, 8, colors["ball"], -1)
+        cv2.circle(img, p, 8, (255, 255, 255), 2)
     return img
 
 

@@ -4,15 +4,18 @@ import json
 import cv2
 import numpy as np
 
-from .pipeline import (load_clip, draw_minimap, build_ball_track,
-                       smooth_tracks, project_dets, data_dir, out_dir)
+from .pipeline import (compute_minimap, draw_minimap, build_ball_track,
+                       smooth_tracks, project_dets, out_dir)
 from .homography import fit_homography, smooth_homography_seq
 from .pitch import make_minimap_canvas
 
-# side by side comparison video for one clip
-# experiment: the "ours" panel runs our homography pipeline on soccernet's
-# detected lines and boxes (not the ground truth), so ours and soccernet use
-# the same noisy inputs and only the geometry method differ
+# side by side comparison video for one clip:
+#   row of minimaps:  ours (gt inputs) | ours (soccernet inputs) | soccernet
+#   the source match video below
+# the first two panels both run our homography pipeline; they differ only in
+# whether it is fed the ground truth pitch lines/boxes or soccernet's detected
+# ones. the third panel is soccernet's own predicted positions. soccernet does
+# not place the ball on its minimap, so that panel shows players only.
 
 
 def label(img, text):
@@ -22,32 +25,17 @@ def label(img, text):
     return np.vstack([bar, img])
 
 
-def gt_frames(clip, image_ids):
-    # ground truth pitch positions straight from the dataset annotations
-    labels = json.loads((data_dir / clip / "Labels-GameState.json").read_text())
-    per = {}
-    for ann in labels["annotations"]:
-        bp = ann.get("bbox_pitch")
-        if not isinstance(bp, dict):
-            continue
-        attrs = ann.get("attributes") or {}
-        per.setdefault(str(ann["image_id"]), []).append({
-            "role": attrs.get("role"),
-            "team": attrs.get("team"),
-            "world_xy": (bp["x_bottom_middle"], bp["y_bottom_middle"]),
-        })
-    return [per.get(str(iid), []) for iid in image_ids]
-
-
 def soccernet_frames(sn, image_ids):
-    # soccernet's own predicted positions (from their 3d calibration)
+    # soccernet's own predicted positions; the ball is dropped because the
+    # soccernet baseline does not place it on the minimap
     out = []
     for iid in image_ids:
         dets = []
         for d in sn.get(str(iid), {}).get("dets", []):
-            if d["pitch"] is not None:
-                dets.append({"role": d["role"], "team": d["team"],
-                             "world_xy": tuple(d["pitch"])})
+            if d["role"] == "ball" or d["pitch"] is None:
+                continue
+            dets.append({"role": d["role"], "team": d["team"],
+                         "world_xy": tuple(d["pitch"])})
         out.append(dets)
     return out
 
@@ -87,11 +75,11 @@ def main():
     args = ap.parse_args()
     clip = args.clip
 
-    info, img_dir, images, _, _ = load_clip(clip)
+    # panel 1: our homography pipeline on the ground truth lines and boxes
+    info, img_dir, images, image_ids, ours_gt = compute_minimap(clip)
     sample = next(iter(images.values()))
     w, h = sample["width"], sample["height"]
     fps = info.get("frame_rate", 25)
-    image_ids = sorted(images, key=lambda k: images[k]["file_name"])
 
     sn_path = out_dir / clip / "soccernet.json"
     if not sn_path.exists():
@@ -100,7 +88,7 @@ def main():
     sn = json.loads(sn_path.read_text())
 
     panels = [
-        ("ground truth", gt_frames(clip, image_ids)),
+        ("ours (gt inputs)", ours_gt),
         ("ours (soccernet inputs)", ours_on_soccernet(sn, image_ids, w, h)),
         ("soccernet", soccernet_frames(sn, image_ids)),
     ]
