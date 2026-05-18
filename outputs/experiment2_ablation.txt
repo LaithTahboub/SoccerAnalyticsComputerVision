@@ -1,0 +1,16 @@
+
+=== experiment 2: ablations (58 clips, 43500 frames) ===
+
+A. circle-degeneracy handling -- frames with a valid homography
+   with circle handling : 41885 / 43500  (96.3%)
+   without (ablated)    : 35484 / 43500  (81.6%)
+   recovered by circle handling: 14.7% of all frames
+
+B. temporal smoothing -- per-frame probe-point displacement (metres)
+   raw fits (ablated): median=0.37  p90=3.90  p95=12.79  jumps>5m=8.7%
+   median-smoothed   : median=0.31  p90=2.89  p95=9.06  jumps>5m=7.2%
+
+C. airborne-ball gating
+   off-pitch ball frames: raw projection (ablated)=3895   gated=0
+   ball error vs gt on sane-gt frames (metres): raw median=0.63  gated median=0.64
+   ball error mean: raw=1.68  gated=1.59

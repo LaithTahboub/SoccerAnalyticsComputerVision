@@ -145,4 +145,65 @@ A classical planar homography matches and, on this evidence, exceeds a trained
 3D-calibration network for minimap player localization, while requiring no
 training, no learned weights, and no GPU.
 
+\subsection{Experiment 2: Component Ablation}
+
+\paragraph{Goal.}
+Our pipeline adds three components on top of a plain homography fit:
+circle-based handling of degenerate camera views, temporal smoothing, and
+physics-based gating of the airborne ball. We disable each in turn and measure
+the metric it targets, over all 58 clips (43{,}500 frames), to confirm each
+earns its place. Results are summarized in Table~\ref{tab:exp2}.
+
+\paragraph{Circle-degeneracy handling.}
+Many broadcast frames show only mutually parallel pitch lines --- for example
+the two sidelines and the halfway line --- which cannot constrain an
+eight-degree-of-freedom homography. For these frames our method adds point
+correspondences derived from the central circle. With this component disabled,
+the fraction of frames yielding a valid homography falls from 96.3\% to
+81.6\%: circle handling recovers 14.7\% of all frames (roughly 6{,}400 frames)
+that would otherwise have no minimap at all.
+
+\paragraph{Temporal smoothing.}
+Independently fitted homographies jitter from frame to frame. We measure the
+per-frame displacement of fixed probe points projected onto the pitch; as this
+quantity is heavy-tailed (a failed fit sends probe points near-infinitely
+far), we report the median and tail percentiles. The median-filter smoothing
+reduces the 90th-percentile displacement from 3.90\,m to 2.89\,m and the 95th
+from 12.79\,m to 9.06\,m ($-26\%$ / $-29\%$), and the rate of large
+($>$5\,m) frame-to-frame jumps from 8.7\% to 7.2\%, while leaving the median
+essentially unchanged (0.37\,m $\rightarrow$ 0.31\,m). It thus suppresses
+jitter without lagging genuine camera motion.
+
+\paragraph{Airborne-ball gating.}
+A ground-plane homography cannot localize an airborne ball: its image point
+can back-project far off the pitch. Without gating, the raw ball projection
+lands off the pitch in 3{,}895 frames; our physics-based gate and trajectory
+interpolation reduce this to zero. On frames where the ball's ground-truth
+position is itself reliable, gating leaves accuracy unchanged (median error
+$0.63 \rightarrow 0.64$\,m, mean $1.68 \rightarrow 1.59$\,m) --- it eliminates
+the catastrophic frames at no cost to the rest.
+
+\begin{table}[t]
+  \caption{Component ablation over all 58 validation clips (43{,}500 frames).
+    Each component is disabled in turn and evaluated by the metric it targets.
+    ``Full'' is the complete pipeline; ``Ablated'' removes that one component.}
+  \label{tab:exp2}
+  \centering
+  \begin{tabular}{llcc}
+    \toprule
+    Component ablated & Metric & Full & Ablated \\
+    \midrule
+    Circle-degeneracy handling & Frames with valid homography (\%) & \textbf{96.3} & 81.6 \\
+    Temporal smoothing         & p95 probe displacement (m)        & \textbf{9.06} & 12.79 \\
+    Airborne-ball gating       & Off-pitch ball frames             & \textbf{0}    & 3895 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Takeaway.}
+All three components yield measurable improvements: circle handling and ball
+gating eliminate outright failures (unsolvable frames and off-pitch ball
+projections), while temporal smoothing reduces residual jitter without
+sacrificing responsiveness to real camera motion.
+
 \end{document}

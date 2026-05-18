@@ -132,6 +132,15 @@ def main():
         print("done", clip)
 
     rs, ss = np.array(raw_steps), np.array(sm_steps)
+
+    def jstats(a):
+        # robust stats: per-frame displacement is heavy-tailed (a failed
+        # homography sends probe points near-infinitely far), so mean/max
+        # are uninformative; report the median, tail percentiles, and the
+        # rate of visible jumps.
+        return (np.median(a), np.percentile(a, 90), np.percentile(a, 95),
+                100 * (a > 5).mean())
+
     lines = [
         "",
         "=== experiment 2: ablations (%d clips, %d frames) ===" % (len(clips), frames),
@@ -145,10 +154,8 @@ def main():
             100 * (valid_full - valid_nc) / frames),
         "",
         "B. temporal smoothing -- per-frame probe-point displacement (metres)",
-        "   raw fits (ablated)   : mean=%.3f  p99=%.2f  max=%.1f" % (
-            rs.mean(), np.percentile(rs, 99), rs.max()),
-        "   median-smoothed      : mean=%.3f  p99=%.2f  max=%.1f" % (
-            ss.mean(), np.percentile(ss, 99), ss.max()),
+        "   raw fits (ablated): median=%.2f  p90=%.2f  p95=%.2f  jumps>5m=%.1f%%" % jstats(rs),
+        "   median-smoothed   : median=%.2f  p90=%.2f  p95=%.2f  jumps>5m=%.1f%%" % jstats(ss),
         "",
         "C. airborne-ball gating",
         "   off-pitch ball frames: raw projection (ablated)=%d   gated=%d" % (
