@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(.venv/bin/python -c ' *)",
-      "Bash(time .venv/bin/python -m src.pipeline SNGS-021)"
-    ]
-  }
-}
