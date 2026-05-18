@@ -26,6 +26,19 @@ world_lines_straight = {
 }
 
 
+def _is_vertical(endpoints):
+    (x1, y1), (x2, y2) = endpoints
+    return abs(x1 - x2) < abs(y1 - y2)
+
+
+# pairs of pitch lines that cross at a finite point (one vertical, one horizontal)
+valid_pairs = [
+    (v, h)
+    for v in world_lines_straight if _is_vertical(world_lines_straight[v])
+    for h in world_lines_straight if not _is_vertical(world_lines_straight[h])
+]
+
+
 def make_minimap_canvas(width_px=900, margin_px=40):
     scale = (width_px - 2 * margin_px) / pitch_length
     height_px = int(pitch_width * scale) + 2 * margin_px

@@ -5,7 +5,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .homography import fit_homography, project_points
+from .homography import (fit_homography, project_points,
+                         smooth_homography, smooth_homography_init)
 from .pitch import make_minimap_canvas
 
 root = Path(__file__).resolve().parents[1]
@@ -30,6 +31,7 @@ def load_clip(name):
             b = ann["bbox_image"]
             attrs = ann.get("attributes") or {}
             dets_per.setdefault(iid, []).append({
+                "track_id": ann.get("track_id"),
                 "role": attrs.get("role"),
                 "team": attrs.get("team"),
                 "bbox": (b["x"], b["y"], b["w"], b["h"]),
@@ -70,6 +72,20 @@ def stack(a, b, h=720):
     return np.hstack([cv2.resize(a, (aw, h)), cv2.resize(b, (bw, h))])
 
 
+def smooth_tracks(dets, track_xy, beta=0.4):
+    # per-track EMA on the projected minimap position (removes per-player jitter)
+    for d in dets:
+        tid, p = d.get("track_id"), d.get("world_xy")
+        if tid is None or p is None:
+            continue
+        if tid in track_xy:
+            prev = track_xy[tid]
+            p = (beta * p[0] + (1 - beta) * prev[0],
+                 beta * p[1] + (1 - beta) * prev[1])
+        track_xy[tid] = p
+        d["world_xy"] = p
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("clip")
@@ -87,6 +103,9 @@ def main():
 
     image_ids = sorted(images, key=lambda k: images[k]["file_name"])
     writer = None
+    last_g = None
+    smoother = smooth_homography_init(w, h)
+    track_xy = {}
 
     for iid in image_ids:
         frame = cv2.imread(str(img_dir / images[iid]["file_name"]))
@@ -94,6 +113,11 @@ def main():
             continue
 
         g = fit_homography(pitch_per.get(iid, {}), w, h)
+        if g is None:
+            g = last_g
+        else:
+            last_g = g
+        g = smooth_homography(smoother, g)
         dets = dets_per.get(iid, [])
         for d in dets:
             d["world_xy"] = None
@@ -103,6 +127,7 @@ def main():
             for d, p in zip(dets, world):
                 if np.all(np.isfinite(p)):
                     d["world_xy"] = (float(p[0]), float(p[1]))
+        smooth_tracks(dets, track_xy)
 
         side = stack(draw_broadcast(frame, dets), draw_minimap(canvas, w2p, dets))
         if writer is None:
